@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  # FastCheckOut Application
+  fastcheckout:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fastcheckout
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - LINKBAY_API_URL=${LINKBAY_API_URL}
+      - LINKBAY_API_KEY=${LINKBAY_API_KEY}
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
+      - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
+      - NEXT_PUBLIC_PAYPAL_CLIENT_ID=${NEXT_PUBLIC_PAYPAL_CLIENT_ID}
+      - REDIS_URL=redis://redis:6379
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - redis
+    networks:
+      - fastcheckout-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for caching and rate limiting
+  redis:
+    image: redis:7-alpine
+    container_name: fastcheckout-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - fastcheckout-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL (optional - for session/order storage)
+  postgres:
+    image: postgres:15-alpine
+    container_name: fastcheckout-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=fastcheckout
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - POSTGRES_DB=fastcheckout
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - fastcheckout-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastcheckout"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+
+networks:
+  fastcheckout-network:
+    driver: bridge
